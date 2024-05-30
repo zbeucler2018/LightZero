@@ -1,4 +1,4 @@
-# Created by .ignore support plugin (hsz.mobi)
+# Created byx .ignore support plugin (hsz.mobi)
 ### ArchLinuxPackages template
 *.tar
 *.tar.*
@@ -831,6 +831,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+env
 .env
 .venv
 venv/
