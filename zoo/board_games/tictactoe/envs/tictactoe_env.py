@@ -74,27 +74,34 @@ class TicTacToeEnv(BaseEnv):
 
     def __init__(self, cfg=None):
         self.cfg = cfg
+
         self.channel_last = cfg.channel_last
         self.scale = cfg.scale
+
         self.battle_mode = cfg.battle_mode
         # The mode of interaction between the agent and the environment.
         assert self.battle_mode in ['self_play_mode', 'play_with_bot_mode', 'eval_mode']
         # The mode of MCTS is only used in AlphaZero.
         self.battle_mode_in_simulation_env = 'self_play_mode'
+
         self.board_size = 3
         self.players = [1, 2]
         self.total_num_actions = 9
+
         self.prob_random_agent = cfg.prob_random_agent
         self.prob_expert_agent = cfg.prob_expert_agent
         assert (self.prob_random_agent >= 0 and self.prob_expert_agent == 0) or (
                 self.prob_random_agent == 0 and self.prob_expert_agent >= 0), \
             f'self.prob_random_agent:{self.prob_random_agent}, self.prob_expert_agent:{self.prob_expert_agent}'
+        
         self._env = self
+
         self.agent_vs_human = cfg.agent_vs_human
         self.bot_action_type = cfg.bot_action_type
         if 'alpha_beta_pruning' in self.bot_action_type:
             self.alpha_beta_pruning_player = AlphaBetaPruningBot(self, cfg, 'alpha_beta_pruning_player')
         self.alphazero_mcts_ctree = cfg.alphazero_mcts_ctree
+
         self._replay_path = cfg.replay_path if hasattr(cfg, "replay_path") and cfg.replay_path is not None else None
         self._save_replay_count = 0
 
@@ -146,6 +153,7 @@ class TicTacToeEnv(BaseEnv):
             # Convert byte string to np.ndarray
             init_state = np.frombuffer(init_state, dtype=np.int32)
 
+        # create spaces
         if self.scale:
             self._observation_space = gym.spaces.Box(
                 low=0, high=1, shape=(self.board_size, self.board_size, 3), dtype=np.float32
@@ -156,8 +164,12 @@ class TicTacToeEnv(BaseEnv):
             )
         self._action_space = gym.spaces.Discrete(self.board_size ** 2)
         self._reward_space = gym.spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+
+        # create players
         self.start_player_index = start_player_index
         self._current_player = self.players[self.start_player_index]
+
+        # create board
         if init_state is not None:
             self.board = np.array(copy.deepcopy(init_state), dtype="int32")
             if self.alphazero_mcts_ctree:
@@ -165,6 +177,7 @@ class TicTacToeEnv(BaseEnv):
         else:
             self.board = np.zeros((self.board_size, self.board_size), dtype="int32")
 
+        # build init action_mask
         action_mask = np.zeros(self.total_num_actions, 'int8')
         action_mask[self.legal_actions] = 1
 
@@ -207,6 +220,7 @@ class TicTacToeEnv(BaseEnv):
             self.board = np.zeros((self.board_size, self.board_size), dtype="int32")
 
     def step(self, action):
+        # for a random chance use the bot action
         if self.battle_mode == 'self_play_mode':
             if self.prob_random_agent > 0:
                 if np.random.rand() < self.prob_random_agent:
