@@ -86,7 +86,7 @@ class Board:
 
   def __repr__(self) -> str:
     """Renders the board to the console"""
-    tmp = "   |0 ||1 ||2 ||3 ||4 ||5 ||6 || 7|\n\n"
+    tmp = "\n\n"
     for y in reversed(range(self.board_size)):  # Iterate in reverse for correct orientation
         tmp += f"{y}| "
         for x in range(self.board_size):
@@ -94,7 +94,7 @@ class Board:
           l, r = self.board[indx]
           tmp += f"|{l.to_str()}{r.to_str()}|"
         tmp += "\n"
-    tmp += "\n"
+    tmp += "   |0 ||1 ||2 ||3 ||4 ||5 ||6 || 7|"
     return tmp
 
 

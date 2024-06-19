@@ -10,13 +10,34 @@ import pytest
     # 2 random bots play eachother
 
 if True:
-    cfg = EasyDict(dict(
-        battle_mode='play_with_bot_mode',
+    random_agents_faceoff_cfg = EasyDict(dict(
+        battle_mode='play_with_bot_mode', # play_with_bot_mode self_play_mode eval_mode
+        agent_vs_human=False,
         bot_action_type='random',
         prob_random_agent=0,
         prob_expert_agent=0,
         render_mode='ascii'
     ))
+
+    random_agent_vs_human = EasyDict(dict(
+        battle_mode='self_play_mode', # play_with_bot_mode self_play_mode eval_mode
+        agent_vs_human=True,
+        bot_action_type='random',
+        prob_random_agent=0,
+        prob_expert_agent=0,
+        render_mode='ascii'
+    ))
+
+    mm_vs_human = EasyDict(dict(
+        battle_mode='self_play_mode',
+        agent_vs_human=True,
+        bot_action_type='random',
+        prob_random_agent=0,
+        prob_expert_agent=0,
+        render_mode='ascii'
+    ))
+
+    cfg = random_agent_vs_human
 
     env = PePiPoEnv(cfg)
 
@@ -28,7 +49,7 @@ if True:
         action = env.random_action()
         # print(*env.parse_piece_from_action(action))
         timestep = env.step(action)
-        print(timestep)
+        # print(timestep)
         # env.render()
 
         if timestep.done:

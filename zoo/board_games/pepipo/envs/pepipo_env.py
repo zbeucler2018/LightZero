@@ -198,7 +198,7 @@ class PePiPoEnv(BaseEnv):
                 return p1_timestep
 
             # player2's turn
-            bot_action = self.human_to_action() if self.agent_vs_human else self.bot_action()
+            bot_action = self.human_to_action() if self.cfg.agent_vs_human else self.bot_action()
             p2_timestep = self.modify_state(bot_action)
             # NOTE: I dont really understand below (calcs player2 total episode reward?)
             # The 'eval_episode_return' is calculated from player1's perspective
@@ -233,11 +233,6 @@ class PePiPoEnv(BaseEnv):
         '''Sample a random legal action'''
         action_list = self.legal_actions()
         return np.random.choice(action_list)
-
-
-    def human_to_action(self) -> int:
-        '''Get an action from the human player'''
-        ...
 
 
     def _get_obs(self, player=None) -> np.ndarray:
@@ -313,9 +308,41 @@ class PePiPoEnv(BaseEnv):
 
         # calc board coords
         indx = action % 64
-        x = indx // self.game.board.board_size
-        y = indx % self.game.board.board_size
+        x = indx // self.board_size
+        y = indx % self.board_size
         return piece_type, x, y
+
+
+    def convert_piece_and_coordinates_to_action(self, piece_type: str, x: int, y: int) -> int:
+        # Determine the base action value based on piece type
+        if piece_type == "pi": # t_Piece.PI:
+            base_action = 0
+        elif piece_type == "pe": # t_Piece.PE:
+            base_action = 64
+        elif piece_type == "po": # t_Piece.PO:
+            base_action = 128
+        else:
+            raise ValueError("Invalid piece type {piece_type}")
+
+        # Calculate the action from coordinates
+        indx = x * self.board_size + y
+        action = base_action + indx
+        return action
+
+
+    def human_to_action(self) -> int:
+        '''Get an action from the human player'''
+        while True:
+            try:
+                user_input = input("Enter PE, PI, or PO: ").lower()
+                user_x = int(input("Enter x: "))
+                user_y = int(input("Enter y: "))
+                return self.convert_piece_and_coordinates_to_action(user_input, user_x, user_y)
+            except ValueError as e:
+                continue
+            except Exception as e:
+                if not isinstance(e, ValueError):
+                    raise e
 
 
     def render(self, mode="ascii") -> None:
