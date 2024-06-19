@@ -28,10 +28,13 @@ class Node():
         return f"Tree({', '.join(str(child) for child in self.children)})"
 
     def expand(self):
+        # This expands the game tree and generates nodes as children to self.parent
+
         if self.start_player_index == 0:
             next_start_player_index = 1
         else:
             next_start_player_index = 0
+        
         if self.is_terminal_node is False:
             # Ensure self.legal_actions is valid before the loop
             # self.legal_actions = self.env.get_legal_actions(self.board, self.start_player_index)
@@ -55,7 +58,7 @@ class Node():
         # return len(self.children) > 0
         return self.tree_expanded
 
-    def is_fully_expanded(self):
+    def is_fully_expanded(self) -> bool:
         return len(self.children) == len(self.legal_actions)
 
     @property

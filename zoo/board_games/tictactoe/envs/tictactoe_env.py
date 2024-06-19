@@ -220,6 +220,12 @@ class TicTacToeEnv(BaseEnv):
             self.board = np.zeros((self.board_size, self.board_size), dtype="int32")
 
     def step(self, action):
+        # 3 optional opponents (battle_mode's): self_play_mode, play_with_bot_mode, eval_mode.
+        # # self_play_mode
+        # for a random chance, use a random action or a 'bot' (alpha_beta_pruning or a dumb algo) action
+
+
+
         # for a random chance use the bot action
         if self.battle_mode == 'self_play_mode':
             if self.prob_random_agent > 0:
@@ -444,9 +450,9 @@ class TicTacToeEnv(BaseEnv):
         board = copy.deepcopy(self.board)
         for i in range(board.shape[0]):
             for j in range(board.shape[1]):
-                if board[i][j] == 1:
+                if board[i][j] == 1: # p1
                     board[i][j] = -1
-                elif board[i][j] == 2:
+                elif board[i][j] == 2: # p2
                     board[i][j] = 1
 
         # first random sample a action from legal_actions
@@ -618,7 +624,7 @@ class TicTacToeEnv(BaseEnv):
             - new_board (:obj:`np.array`): new board
             - new_legal_actions (:obj:`list`): new legal actions
         """
-        self.reset(start_player_index, init_state=board)
+        self.reset(start_player_index, init_state=board) # reset the env metadata, not the board
         if action not in self.legal_actions:
             raise ValueError("action {0} on board {1} is not legal".format(action, self.board))
         row, col = self.action_to_coord(action)

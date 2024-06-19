@@ -9,24 +9,6 @@ import numpy as np
 
 from game import Game, Board, t_Piece, Piece
 
-"""
-# New obs space
-- Box(0, )
-
-# New board representation
-- np.zeros(shape=(64,), dytpe=np.int8) (can use np.reshape to turn back to matrix)
-- odd = p1, even = p2
-0 | empty
-1 | p1 pe
-2 | p2 pe
-3 | p1 po
-4 | p2 po
-5 | p1 pi in p1 pe
-6 | p2 pi in p2 pe
-7 | p1 pi in p2 pe
-8 | p2 pi in p1 pe
-
-"""
 
 @ENV_REGISTRY.register('pepipo')
 class PePiPoEnv(BaseEnv):
@@ -38,8 +20,8 @@ class PePiPoEnv(BaseEnv):
         battle_mode='self_play_mode',
         # battle_mode_in_simulation_env (str): The mode of Monte Carlo Tree Search. This is only used in AlphaZero.
         battle_mode_in_simulation_env='self_play_mode',
-        # bot_action_type (str): The type of action the bot should take. Choices are 'v0' or 'alpha_beta_pruning'.
-        bot_action_type='v0',
+        # bot_action_type (str): The type of action the bot should take. Choices are 'random' or 'alpha_beta_pruning'.
+        bot_action_type='random',
         # replay_path (str): The folder path where replay video saved, if None, will not save replay video.
         replay_path=None,
         # agent_vs_human (bool): If True, the agent will play against a human.
@@ -56,6 +38,7 @@ class PePiPoEnv(BaseEnv):
         stop_value=1,
         # alphazero_mcts_ctree (bool): If True, the Monte Carlo Tree Search from AlphaZero is used.
         alphazero_mcts_ctree=False,
+        # render_mode (str): 'human', 'ascii', or 'mp4'
     )
 
     @classmethod
@@ -82,9 +65,11 @@ class PePiPoEnv(BaseEnv):
                 self.prob_random_agent == 0 and self.prob_expert_agent >= 0), \
             f'self.prob_random_agent:{self.prob_random_agent}, self.prob_expert_agent:{self.prob_expert_agent}'
 
-        self.players = [1, 2]
-        self._current_player = 1
-        self.env = None # PePiPoGymEnv() ???
+        self.render_mode = cfg.render_mode
+
+        self.players = ["player_1", "player_2"]
+        self._current_player = "player_1"
+        self._env = self
 
         valid_piece_types = (t_Piece.PE, t_Piece.PI, t_Piece.PO)
         total_spots_on_board = self.game.board.board_size**2
@@ -93,7 +78,7 @@ class PePiPoEnv(BaseEnv):
 
 
     def reset(self, start_player_index: int = 0, init_state: Optional[np.ndarray] = None) -> dict:
-        self.players = [1, 2]
+        self.players = ["player_1", "player_2"]
         self.start_player_index = start_player_index
         self._current_player = self.players[self.start_player_index]
 
@@ -105,7 +90,7 @@ class PePiPoEnv(BaseEnv):
                 "action_mask": spaces.Box(low=0, high=1, shape=(self.total_num_actions,), dtype=np.int8),
                 "current_player_index": spaces.Discrete(2),
                 "to_play": spaces.Discrete(2),
-                # "board": spaces.Box(low=0, ???)
+                "board": spaces.Box(low=0, high=8, shape=(self.board_size**2,), dtype=np.int8)
             }
         )
 
@@ -119,7 +104,7 @@ class PePiPoEnv(BaseEnv):
                 "action_mask": self._get_action_mask(),
                 "current_player_index": self.players.index(self._current_player),
                 "to_play": -1,
-                # "board": copy.deepcopy(self.board),
+                "board": copy.deepcopy(self.board),
             }
         elif self.battle_mode == 'self_play_mode':
             return {
@@ -127,13 +112,46 @@ class PePiPoEnv(BaseEnv):
                 "action_mask": self._get_action_mask(),
                 "current_player_index": self.players.index(self._current_player),
                 "to_play": self._current_player,
-                # "board": copy.deepcopy(self.board),
+                "board": copy.deepcopy(self.board),
             }
         else:
             raise Exception(f"Hit unknown condition in observe() | battle_mode: {self.battle_mode}")
 
 
+    def modify_state(self, action) -> BaseEnvTimestep:
+        # 1. validate move
+        t_piece, x, y = self.parse_piece_from_action(action)
+        assert self.game.validate_move(x, y, t_piece, self._current_player), f"The following move is invalid for {self._current_player}: {t_piece} ({x}, {y})"
+
+        # 2. make move
+        self.game.make_move(x, y, t_piece, self._current_player)
+
+        # 3. check winner and get reward
+        reward = np.array(0).astype(np.float32)
+        done = False
+        if self.game.check_winner(self._current_player):
+            reward = np.array(1).astype(np.float32)
+            done = True
+        elif self.game.check_tie(self._current_player):
+            done = True
+
+        # 4. rotate player
+        self._current_player = self._next_player
+
+        # 5. populate BaseEnvTimestep with obs, done, etc
+        info = {}
+        if done:
+            info['eval_episode_return'] = reward
+        obs = self.observe()
+        timestep = BaseEnvTimestep(obs, reward, done, info)
+
+        self.render()
+
+        return timestep
+
+
     def step(self, action) -> BaseEnvTimestep:
+        # self play (training)
         if self.battle_mode == 'self_play_mode':
             if self.prob_random_agent > 0:
                 if np.random.rand() < self.prob_random_agent:
@@ -141,68 +159,150 @@ class PePiPoEnv(BaseEnv):
             elif self.prob_expert_agent > 0:
                 if np.random.rand() < self.prob_expert_agent:
                     action = self.bot_action()
-
-            flag = "agent"
-            timestep = self._player_step(action, flag)
-
+            timestep = self.modify_state(action)
             if timestep.done:
                 # The ``eval_episode_return`` is calculated from player 1's perspective.
-                timestep.info['eval_episode_return'] = -timestep.reward if timestep.obs[
-                                                                               'to_play'] == 1 else timestep.reward
-
+                timestep.info['eval_episode_return'] = -timestep.reward if timestep.obs['to_play'] == 1 else timestep.reward
             return timestep
-        return BaseEnvTimestep({}, 0, 0, {})
+
+        # 2 bots face each other
+        if self.battle_mode == "play_with_bot_mode":
+            # player1's turn
+            p1_timestep = self.modify_state(action)
+            if p1_timestep.done:
+                # NOTE: in ``play_with_bot_mode``, we must set to_play as -1, because we don't consider the alternation between players.
+                # And the ``to_play`` is used in MCTS.
+                p1_timestep.obs['to_play'] = -1
+                return p1_timestep
+
+            # player2's turn
+            bot_action = self.bot_action()
+            p2_timestep = self.modify_state(bot_action)
+            # NOTE: I dont really understand below (calcs player2 total episode reward?)
+            # The ``eval_episode_return`` is calculated from player 1's perspective.
+            p2_timestep.info['eval_episode_return'] = -p2_timestep.reward
+            p2_timestep = p2_timestep._replace(reward=-p2_timestep.reward)
+            # NOTE: in ``play_with_bot_mode``, we must set to_play as -1, because we don't consider the alternation between players.
+            # And the ``to_play`` is used in MCTS.
+            p2_timestep.obs['to_play'] = -1
+            return p2_timestep
+
+        # bot (p1) vs human (p2)
+        if self.battle_mode == "eval_mode":
+            # player 1's turn
+            p1_timestep = self.modify_state(action)
+            if p1_timestep.done:
+                # NOTE: in ``eval_mode``, we must set to_play as -1, because we don't consider the alternation between players.
+                # And the ``to_play`` is used in MCTS.
+                p1_timestep.obs['to_play'] = -1
+                return p1_timestep
+
+            # player2's turn
+            bot_action = self.human_to_action() if self.agent_vs_human else self.bot_action()
+            p2_timestep = self.modify_state(bot_action)
+            # NOTE: I dont really understand below (calcs player2 total episode reward?)
+            # The 'eval_episode_return' is calculated from player1's perspective
+            p2_timestep.info['eval_episode_return'] = -p2_timestep.reward
+            p2_timestep = p2_timestep._replace(reward=-p2_timestep.reward)
+            # NOTE: in ``eval_mode``, we must set to_play as -1, because we don't consider the alternation between players.
+            # And the ``to_play`` is used in MCTS.
+            p2_timestep.obs['to_play'] = -1
+            return p2_timestep
 
 
     def legal_actions(self) -> List[int]:
-        agent = f"player_{self._current_player}"
-        mask = np.zeros(shape=(self.total_num_actions), dtype=np.int8)
-        # iterate through all possible actions
-        # and mark 1 if legal and 0 if illegal
+        '''Returns a list of legal moves for the current agent'''
+        legal_actions = []
+        agent = self._current_player
         for action in range(self.total_num_actions):
             piece_type, x, y = self.parse_piece_from_action(action)
-            mask[action] = 1 if self.game.validate_move(x, y, piece_type, agent) else 0
-        return mask
+            if self.game.validate_move(x, y, piece_type, agent):
+                legal_actions.append(action)
+        return legal_actions
 
 
     def bot_action(self) -> int:
-        return
+        if self.cfg.bot_action_type == "random":
+            return self.random_action()
+        # elif self.cfg.bot_action_type == "alpha_beta_pruning"
+        else:
+            raise NotImplementedError(f"The bot_action_type: {self.cfg.bot_action_type} is not implimented")
 
 
     def random_action(self) -> int:
-        return
+        '''Sample a random legal action'''
+        action_list = self.legal_actions()
+        return np.random.choice(action_list)
 
 
-    def render(self, mode="human") -> None:
-        return None
+    def human_to_action(self) -> int:
+        '''Get an action from the human player'''
+        ...
 
 
-    @property
-    def observation_space(self) -> spaces.Space:
-        return self._observation_space
+    def _get_obs(self, player=None) -> np.ndarray:
+        """Generates the observation from the state (board). ONLY WORKS FOR 2 PLAYERS"""
+        # NOTE: ONLY WORKS WITH 2 PLAYERS
+        # All possible states of a spot on the board
+        # 0. empty
+        # 1. my pe or my pi and my pe
+        # 2. op pe or op pi and my pe
+        # 3. my po
+        # 4. op po
+        # 5. my pi in op pe
+        # 6. op pi in my pe
+        if player is None:
+            player = self._current_player
+        n_possible_cell_states = 6
+        base = np.zeros(shape=(self.game.board.board_size, self.game.board.board_size), dtype=np.float16)
+        for x in range(self.game.board.board_size):
+            for y in range(self.game.board.board_size):
+                cell = self.game.board[x, y]
+
+                # my pe
+                if cell[1].player_id == player and cell[1]._typename == t_Piece.PE:
+                    base[x, y] = 1
+
+                # op pe
+                if cell[1].player_id != player and cell[1]._typename == t_Piece.PE:
+                    base[x, y] = 2
+
+                # my po or my pe+pi
+                if (cell[1].player_id == player and cell[1]._typename == t_Piece.PO) or \
+                    ((cell[0].player_id == player and cell[0]._typename == t_Piece.PI) and (cell[1].player_id == player and cell[1]._typename == t_Piece.PE)):
+                    base[x, y] = 3
+
+                # op po or op pe+pi
+                if (cell[1].player_id != player and cell[1]._typename == t_Piece.PO) or \
+                    ((cell[0].player_id != player and cell[0]._typename == t_Piece.PI) and (cell[1].player_id != player and cell[1]._typename == t_Piece.PE)):
+                    base[x, y] = 4
+
+                # my pi in op pe
+                if (cell[0].player_id == player and cell[0]._typename == t_Piece.PI) and (cell[1].player_id != player and cell[1]._typename == t_Piece.PE):
+                    base[x, y] = 5
+
+                # op pi in my pe
+                if (cell[0].player_id != player and cell[0]._typename == t_Piece.PI) and (cell[1].player_id == player and cell[1]._typename == t_Piece.PE):
+                    base[x, y] = 6
+
+        # normalize
+        base = base / n_possible_cell_states
+        return base
 
 
-    @property
-    def action_mask(self) -> spaces.Space:
-        return self._action_space
-
-
-    @property
-    def reward_space(self) -> spaces.Space:
-        return self._reward_space
-
-
-    def _get_obs(self) -> np.ndarray:
-        return
-
-
-    def _get_action_mask(self) -> np.ndarray:
-        return
+    def _get_action_mask(self, player=None) -> np.ndarray:
+        if player is None:
+            player = self._current_player
+        mask = np.zeros(shape=(3*64), dtype=np.int8)
+        # iterate through all possible actions
+        # and mark 1 if legal and 0 if illegal
+        for action in range(3*64):
+            piece_type, x, y = self.parse_piece_from_action(action)
+            mask[action] = 1 if self.game.validate_move(x, y, piece_type, player) else 0
+        return mask
 
 
     def parse_piece_from_action(self, action) -> tuple[t_Piece, int, int]:
-        # this is gross but whatever
-        # TODO: unit test?
         piece_type = -1
         if action > -1 and action < 64: # 0 to 63 inclusively
             piece_type = t_Piece.PI
@@ -218,6 +318,82 @@ class PePiPoEnv(BaseEnv):
         return piece_type, x, y
 
 
+    def render(self, mode="ascii") -> None:
+        if self.render_mode == 'ascii':
+            self.game.print_board()
+
+
+    def seed(self, seed: int, dynamic_seed: bool = True) -> None:
+        self._seed = seed
+        self._dynamic_seed = dynamic_seed
+        np.random.seed(self._seed)
+
+
+    def close(self):
+        pass
+
+
+    @property
+    def _next_player(self) -> str:
+        return "player_2" if self._current_player == "player_1" else "player_1"
+
+
+    @property
+    def board(self) -> np.ndarray:
+        """
+        These envs need a 'global' view of the board and Game.board isn't really right for this
+        - odd = p1, even = p2
+        - could condense 5 and 6 as 3 and 4 respectively
+        0 | empty
+        1 | p1 pe
+        2 | p2 pe
+        3 | p1 po
+        4 | p2 po
+        5 | p1 pi in p1 pe
+        6 | p2 pi in p2 pe
+        7 | p1 pi in p2 pe
+        8 | p2 pi in p1 pe
+        """
+        tmp_board = np.zeros(shape=(64,), dtype=np.int8)
+        for indx, spot in enumerate(self.game.board.board):
+            left, right = spot
+
+            if left._typename == t_Piece.EMPTY and right._typename == t_Piece.EMPTY:
+                tmp_board[indx] = 0
+            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                tmp_board[indx] = 1
+            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                tmp_board[indx] = 2
+            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_1"):
+                tmp_board[indx] = 3
+            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_2"):
+                tmp_board[indx] = 4
+            if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                tmp_board[indx] = 5
+            if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                tmp_board[indx] = 6
+            if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                tmp_board[indx] = 7
+            if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                tmp_board[indx] = 8
+
+        return tmp_board
+
+
+    @property
+    def observation_space(self) -> spaces.Space:
+        return self._observation_space
+
+
+    @property
+    def action_space(self) -> spaces.Space:
+        return self._action_space
+
+
+    @property
+    def reward_space(self) -> spaces.Space:
+        return self._reward_space
+
+
     def __repr__(self) -> str:
         return "LightZero PePiPo Env"
-

@@ -159,13 +159,15 @@ class Connect4Env(BaseEnv):
             - timestep (:obj:`BaseEnvTimestep`): A namedtuple that records the observation and obtained reward after taking the action, \
             whether the game is terminated, and some other information. 
         """
+        # validate action
         if action in self.legal_actions:
+            # modify state
             piece = self.players.index(self._current_player) + 1
             for i in list(filter(lambda x: x % 7 == action, list(range(41, -1, -1)))):
                 if self.board[i] == 0:
                     self.board[i] = piece
                     break
-        else:
+        else: # use random action if given action isnt legal
             print(np.array(self.board).reshape(6, 7))
             logging.warning(
                 f"You input illegal action: {action}, the legal_actions are {self.legal_actions}. "
@@ -237,6 +239,7 @@ class Connect4Env(BaseEnv):
 
             return timestep
 
+        # bot vs bot
         elif self.battle_mode == 'play_with_bot_mode':
             # Player 1's turn.
             flag = "bot_agent"
@@ -264,6 +267,7 @@ class Connect4Env(BaseEnv):
 
             return timestep
 
+        # bot (p1) vs human (p2)
         elif self.battle_mode == 'eval_mode':
             # Player 1's turn.
             flag = "eval_agent"
@@ -500,7 +504,7 @@ class Connect4Env(BaseEnv):
                 - if player 2 win,     'done' = True, 'winner' = 2
                 - if draw,             'done' = True, 'winner' = -1
                 - if game is not over, 'done' = False,'winner' = -1
-        """
+        """        # return (game_is_done, player_that_won)
         board = copy.deepcopy(np.array(self.board)).reshape(6, 7)
         for piece in [1, 2]:
             # Check horizontal locations for win
@@ -549,7 +553,7 @@ class Connect4Env(BaseEnv):
                             and board[r - 3][c + 3] == piece
                     ):
                         return True, piece
-
+        
         if all(x in [1, 2] for x in self.board):
             return True, -1
 

@@ -18,10 +18,10 @@ class Colors:
 
 
 PLAYER_COLOR_MAP = {
-   "player_0": Colors.GREEN,   # (0, 255, 0)
-   "player_1": Colors.BLUE,    # (0, 0, 255)
-   "player_2": Colors.RED,     # (255, 0, 0)
-   "player_3": Colors.MAGENTA  # (255, 0, 255)
+   "player_1": Colors.GREEN,   # (0, 255, 0)
+   "player_2": Colors.BLUE,    # (0, 0, 255)
+   "player_3": Colors.RED,     # (255, 0, 0)
+   "player_4": Colors.MAGENTA  # (255, 0, 255)
 }
 
 
@@ -104,7 +104,7 @@ class Game:
     self.n_players = n_players
     self.board = Board()
     self.max_pos_per_player = 8
-    self.po_per_player = {"player_0": self.max_pos_per_player, "player_1": self.max_pos_per_player}
+    self.po_per_player = {"player_1": self.max_pos_per_player, "player_2": self.max_pos_per_player}
     self.n_pieces_in_a_row_to_win = 5 # Need to get 5 in a row to win
 
     # setup the logger
