@@ -104,7 +104,6 @@ class Game:
     self.n_players = n_players
     self.board = Board()
     self.max_pos_per_player = 8
-    self.po_per_player = {"player_1": self.max_pos_per_player, "player_2": self.max_pos_per_player}
     self.n_pieces_in_a_row_to_win = 5 # Need to get 5 in a row to win
 
     # setup the logger
@@ -112,10 +111,19 @@ class Game:
     self.logger.setLevel(log_level)
     self.logger.addHandler(logging.StreamHandler())
 
-
     assert (self.n_players < 5) and (self.n_players > 1), f"Invalid amount of players. PePiPo is played with 2-4 players, not {self.n_players}"
     if self.n_players > 2: raise NotImplementedError(f"2 players are only supported at the moment, not {self.n_players}")
 
+  @property
+  def pos_per_player(self) -> dict:
+    tmp = {"player_1": self.max_pos_per_player, 
+           "player_2": self.max_pos_per_player,}
+    for cell in self.board.board:
+       _, r = cell
+       if r._typename == t_Piece.PO:
+          tmp[r.player_id] -= 1
+    return tmp
+       
   def play(self) -> None:
     raise NotImplementedError()
 
@@ -143,7 +151,7 @@ class Game:
       reason = "PI is placed in an empty PE"
       is_valid = True
     # 3. Player has used all 8 of their PO's
-    if piece_type == t_Piece.PO and self.po_per_player[player_id] == 0:
+    if piece_type == t_Piece.PO and self.pos_per_player[player_id] == 0:
       reason = "no more PO's left"
       is_valid = False
     # 4. Move is within the board
@@ -157,8 +165,6 @@ class Game:
     """Places a piece on the board."""
     piece = Piece(piece_type, player_id=player_id, color=PLAYER_COLOR_MAP[player_id])
     self.board[x, y] = piece
-    if piece._typename == t_Piece.PO: # decrement player PO count
-        self.po_per_player[player_id] = self.po_per_player[player_id] - 1
 
   def check_tie(self, player_id: str) -> bool:
     """Returns True if there is no more valid moves, False if not.

@@ -64,25 +64,25 @@ class Node():
     @property
     def is_terminal_node(self):
         self.env.reset_v2(self.start_player_index, init_state=self.board)  # index
-        return self.env.get_done_reward()[0]
+        game_won = self.env.game.get_winner("player_1") or self.env.game.get_winner("player_2")
+        game_tied = self.env.game.check_tie("player_1") or self.env.game.check_tie("player_2")                                                
+        return game_won or game_tied
 
     @property
     def value(self):
-        """
-        def get_done_reward(self):
-            Overview:
-                To judge game whether over, and get reward
-            Returns:
-                [game_over, reward]
-                if winner = 1  reward = 1
-                if winner = 2  reward = -1
-                if winner = -1 reward = 0
-        """
         self.env.reset_v2(self.start_player_index, init_state=self.board)  # index
-        return self.env.get_done_reward()[1]
+
+        reward = None
+        if self.env.game.check_winner("player_1"):
+            reward = 1
+        if self.env.game.check_winner("player_2"):
+            reward = -1
+        
+        return reward
 
     @property
     def estimated_value(self):
+        # cal value for nodes that aren't terminal
         return 0
 
     @property
@@ -101,12 +101,6 @@ def pruning(tree, maximising_player, alpha=float("-inf"), beta=float("+inf"), de
     if tree.expanded is False:
         tree.expand()
         # print('expand one node!')
-
-    # for debug
-    # if (ctree.state == np.array([[0, 0, 0], [0, 0, 0], [0, 0, 1]])).all():
-    #     print('p1')
-    # if (ctree.state == np.array([[0, 0, 1], [2, 1, 2], [1, 2, 1]])).all():
-    #     print('p2')
 
     val = float("-inf") if maximising_player else float("+inf")
     for subtree in tree.children:
@@ -149,7 +143,7 @@ class AlphaBetaPruningBot:
         else:
             val, best_subtree = pruning(root, False, depth=depth, first_level=True)
 
-        # print(f'player_index: {player_index}, alpha-beta searched best_action: {best_subtree.prev_action}, its val: {val}')
+        print(f'player_index: {player_index}, alpha-beta searched best_action: {best_subtree.prev_action}, its val: {val}')
 
         return best_subtree.prev_action
 
@@ -203,65 +197,3 @@ if __name__ == "__main__":
     ### test from the init specified board ###
     # assert (row == 0, col == 1) or (row == 1, col == 1)
     # assert env.get_done_winner()[0] is True, env.get_done_winner()[1] == 1
-    """
-
-    ##### Gomoku #####
-    from zoo.board_games.gomoku.envs.gomoku_env import GomokuEnv
-    cfg = dict(
-        board_size=5,
-        prob_random_agent=0,
-        prob_expert_agent=0,
-        battle_mode='self_play_mode',
-        scale=True,
-        channel_last=False,
-        agent_vs_human=False,
-        bot_action_type='alpha_beta_pruning',  # {'v0', 'alpha_beta_pruning'}
-        prob_random_action_in_bot=0.,
-        check_action_to_connect4_in_bot_v0=False,
-    )
-    env = GomokuEnv(EasyDict(cfg))
-    player_0 = AlphaBetaPruningBot(GomokuEnv, cfg, 'player 1')  # player_index = 0, player = 1
-    player_1 = AlphaBetaPruningBot(GomokuEnv, cfg, 'player 2')  # player_index = 1, player = 2
-
-    ### test from the init empty board ###
-    player_index = 0  # player 1 fist
-    env.reset()
-
-    ### test from the init specified board ###
-    # player_index = 1  # player 2 fist
-    # init_state = [[1, 1, 1, 1, 0],
-    #               [1, 0, 0, 0, 2],
-    #               [0, 0, 2, 0, 2],
-    #               [0, 2, 0, 0, 2],
-    #               [2, 1, 1, 0, 0], ]
-    # # init_state = [[1, 1, 1, 1, 2],
-    # #               [1, 1, 2, 1, 2],
-    # #               [2, 1, 2, 2, 2],
-    # #               [0, 0, 0, 2, 2],
-    # #               [2, 1, 1, 1, 0], ]
-    # env.reset(player_index, init_state)
-
-    state = env.board
-    print('-' * 15)
-    print(state)
-
-    while not env.get_done_reward()[0]:
-        if player_index == 0:
-            start = time.time()
-            action = player_0.get_best_action(state, player_index=player_index)
-            print('player 1 action time: ', time.time() - start)
-            player_index = 1
-        else:
-            start = time.time()
-            action = player_1.get_best_action(state, player_index=player_index)
-            print('player 2 action time: ', time.time() - start)
-            player_index = 0
-        env.step(action)
-        state = env.board
-        print('-' * 15)
-        print(state)
-
-    assert env.get_done_winner()[0] is False, env.get_done_winner()[1] == -1
-    # assert env.get_done_winner()[0] is True, env.get_done_winner()[1] == 2
-    """
-

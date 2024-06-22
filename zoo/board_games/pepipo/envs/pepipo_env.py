@@ -96,6 +96,18 @@ class PePiPoEnv(BaseEnv):
 
         return self.observe()
 
+    def convert_board_to_state(self) -> list:
+        ...
+
+    def mmab_reset(self, start_player_index=0, init_state=None):
+        self.start_player_index = start_player_index
+        self._current_player = self.players[self.start_player_index]
+        if init_state is not None:
+            tmp = np.array(init_state, dtype="int32")
+            self.env.game.board = self.convert_board_to_state(init_state)
+        else:
+            self.env.game.board.empty_board()
+
 
     def observe(self) -> dict:
         if self.battle_mode == 'play_with_bot_mode' or self.battle_mode == 'eval_mode':
@@ -358,6 +370,35 @@ class PePiPoEnv(BaseEnv):
 
     def close(self):
         pass
+
+
+    def convert_board_to_state(self, board: np.ndarray) -> Board:
+        '''returns a copy of the board'''
+        tmp = Board()
+        for y in range(self.board_size):
+            for x in range(self.board_size):
+                match board[x,y]:
+                    case 0:
+                        tmp[x, y] = [Piece(t_Piece.EMPTY), Piece(t_Piece.EMPTY)]
+                    case 1:
+                        tmp[x, y] = [Piece(t_Piece.EMPTY), Piece(t_Piece.PE, player_id="player_1")]
+                    case 2:
+                        tmp[x, y] = [Piece(t_Piece.EMPTY), Piece(t_Piece.PE, player_id="player_2")]
+                    case 3:
+                        tmp[x, y] = [Piece(t_Piece.EMPTY), Piece(t_Piece.PO, player_id="player_1")]
+                    case 4:
+                        tmp[x, y] = [Piece(t_Piece.EMPTY), Piece(t_Piece.PO, player_id="player_2")]
+                    case 5:
+                        tmp[x, y] = [Piece(t_Piece.PI, player_id="player_1"), Piece(t_Piece.PE, player_id="player_1")]
+                    case 6:
+                        tmp[x, y] = [Piece(t_Piece.PI, player_id="player_2"), Piece(t_Piece.PE, player_id="player_2")]
+                    case 7:
+                        tmp[x, y] = [Piece(t_Piece.PI, player_id="player_1"), Piece(t_Piece.PE, player_id="player_2")]
+                    case 8:
+                        tmp[x, y] = [Piece(t_Piece.PI, player_id="player_2"), Piece(t_Piece.PE, player_id="player_1")]
+                    case _:
+                        raise Exception(f"Got unknown board spot ({x}, {y}) {self.board[x, y]}")
+        return tmp
 
 
     @property

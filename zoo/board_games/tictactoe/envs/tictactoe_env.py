@@ -222,9 +222,6 @@ class TicTacToeEnv(BaseEnv):
     def step(self, action):
         # 3 optional opponents (battle_mode's): self_play_mode, play_with_bot_mode, eval_mode.
         # # self_play_mode
-        # for a random chance, use a random action or a 'bot' (alpha_beta_pruning or a dumb algo) action
-
-
 
         # for a random chance use the bot action
         if self.battle_mode == 'self_play_mode':
@@ -407,12 +404,13 @@ class TicTacToeEnv(BaseEnv):
                 - if draw,             'done' = True, 'reward' = 0
                 - if game is not over, 'done' = False,'reward' = None
         """
+        # only rewards player1 if it won
         done, winner = self.get_done_winner()
-        if winner == 1:
+        if winner == 1: # p1 w
             reward = 1
-        elif winner == 2:
+        elif winner == 2: # p2 w
             reward = -1
-        elif winner == -1 and done:
+        elif winner == -1 and done: # tie
             reward = 0
         elif winner == -1 and not done:
             # episode is not done

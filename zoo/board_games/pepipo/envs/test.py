@@ -1,6 +1,7 @@
 from pepipo_env import PePiPoEnv
 from easydict import EasyDict
 import pytest
+from game import t_Piece, Board
 
 # @pytest.fixture
 # def env():
@@ -45,12 +46,19 @@ if True:
 
     env.render()
 
+    p =0
     while True:
+        p+=1
         action = env.random_action()
-        # print(*env.parse_piece_from_action(action))
+        print(*env.parse_piece_from_action(action))
+        print(env.game.pos_per_player)
+        print(p)
         timestep = env.step(action)
-        # print(timestep)
-        # env.render()
+
+
+        if p % 10 == 0:
+            env.game.board = Board()
+
 
         if timestep.done:
             print(f"{env._current_player}({timestep.reward}) won!")
