@@ -1,6 +1,5 @@
 from pepipo_env import PePiPoEnv
 from easydict import EasyDict
-import pytest
 from game import t_Piece, Board
 
 # @pytest.fixture
@@ -21,7 +20,7 @@ if True:
     ))
 
     random_agent_vs_human = EasyDict(dict(
-        battle_mode='self_play_mode', # play_with_bot_mode self_play_mode eval_mode
+        battle_mode='eval_mode', # play_with_bot_mode self_play_mode eval_mode
         agent_vs_human=True,
         bot_action_type='random',
         prob_random_agent=0,
@@ -30,15 +29,15 @@ if True:
     ))
 
     mm_vs_human = EasyDict(dict(
-        battle_mode='self_play_mode',
+        battle_mode='eval_mode',
         agent_vs_human=True,
-        bot_action_type='random',
+        bot_action_type='alpha_beta_pruning',
         prob_random_agent=0,
         prob_expert_agent=0,
         render_mode='ascii'
     ))
 
-    cfg = random_agent_vs_human
+    cfg = mm_vs_human
 
     env = PePiPoEnv(cfg)
 
@@ -46,19 +45,11 @@ if True:
 
     env.render()
 
-    p =0
     while True:
-        p+=1
-        action = env.random_action()
         print(*env.parse_piece_from_action(action))
         print(env.game.pos_per_player)
         print(p)
         timestep = env.step(action)
-
-
-        if p % 10 == 0:
-            env.game.board = Board()
-
 
         if timestep.done:
             print(f"{env._current_player}({timestep.reward}) won!")

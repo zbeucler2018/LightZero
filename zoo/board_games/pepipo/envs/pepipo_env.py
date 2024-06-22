@@ -8,6 +8,7 @@ from gymnasium import spaces
 import numpy as np
 
 from game import Game, Board, t_Piece, Piece
+from zoo.board_games.pepipo.envs.mmab import AlphaBetaPruningBot
 
 
 @ENV_REGISTRY.register('pepipo')
@@ -58,6 +59,9 @@ class PePiPoEnv(BaseEnv):
         self.battle_mode_in_simulation_env = 'self_play_mode'
         self.board_size = self.game.board.board_size
 
+        if 'alpha_beta_pruning' in self.cfg.bot_action_type:
+            self.alpha_beta_pruning_player = AlphaBetaPruningBot(self, cfg, 'alpha_beta_pruning_player')
+
         # Set some randomness for selecting action.
         self.prob_random_agent = cfg.prob_random_agent
         self.prob_expert_agent = cfg.prob_expert_agent
@@ -78,6 +82,9 @@ class PePiPoEnv(BaseEnv):
 
 
     def reset(self, start_player_index: int = 0, init_state: Optional[np.ndarray] = None) -> dict:
+        if init_state is not None:
+            self.env.game.board = self.convert_board_to_state(init_state)
+
         self.players = ["player_1", "player_2"]
         self.start_player_index = start_player_index
         self._current_player = self.players[self.start_player_index]
@@ -93,20 +100,29 @@ class PePiPoEnv(BaseEnv):
                 "board": spaces.Box(low=0, high=8, shape=(self.board_size**2,), dtype=np.int8)
             }
         )
-
         return self.observe()
 
-    def convert_board_to_state(self) -> list:
-        ...
 
     def mmab_reset(self, start_player_index=0, init_state=None):
         self.start_player_index = start_player_index
         self._current_player = self.players[self.start_player_index]
         if init_state is not None:
-            tmp = np.array(init_state, dtype="int32")
             self.env.game.board = self.convert_board_to_state(init_state)
         else:
             self.env.game.board.empty_board()
+
+
+    def mmab_simulate_action(self, board, start_player_index, action) -> tuple:
+        self.reset(start_player_index, init_state=board) # reset the env metadata, not the board
+        if action not in self.legal_actions:
+            raise ValueError("action {0} on board {1} is not legal".format(action, self.board))
+        # execute action
+        t_piece, x, y = self.parse_piece_from_action(action)
+        self.game.make_move(x, y, t_piece, self._current_player)
+        # generate new legal actions and new board
+        new_legal_actions = copy.deepcopy(self.legal_actions)
+        new_board = copy.deepcopy(self.board)
+        return new_board, new_legal_actions
 
 
     def observe(self) -> dict:
@@ -236,7 +252,8 @@ class PePiPoEnv(BaseEnv):
     def bot_action(self) -> int:
         if self.cfg.bot_action_type == "random":
             return self.random_action()
-        # elif self.cfg.bot_action_type == "alpha_beta_pruning"
+        elif self.cfg.bot_action_type == "alpha_beta_pruning":
+            return self.alpha_beta_pruning_player.get_best_action(self.board, player_index=self.current_player_index)
         else:
             raise NotImplementedError(f"The bot_action_type: {self.cfg.bot_action_type} is not implimented")
 
@@ -249,7 +266,6 @@ class PePiPoEnv(BaseEnv):
 
     def _get_obs(self, player=None) -> np.ndarray:
         """Generates the observation from the state (board). ONLY WORKS FOR 2 PLAYERS"""
-        # NOTE: ONLY WORKS WITH 2 PLAYERS
         # All possible states of a spot on the board
         # 0. empty
         # 1. my pe or my pi and my pe
@@ -373,7 +389,7 @@ class PePiPoEnv(BaseEnv):
 
 
     def convert_board_to_state(self, board: np.ndarray) -> Board:
-        '''returns a copy of the board'''
+        '''Converts a numpy array representation of a board into a Board class representation'''
         tmp = Board()
         for y in range(self.board_size):
             for x in range(self.board_size):

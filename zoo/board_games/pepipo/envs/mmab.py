@@ -40,7 +40,7 @@ class Node():
             # self.legal_actions = self.env.get_legal_actions(self.board, self.start_player_index)
             while len(self.legal_actions) > 0:
                 action = self.legal_actions.pop(0)
-                board, legal_actions = self.env.simulate_action_v2(self.board, self.start_player_index, action)
+                board, legal_actions = self.env.mmab_simulate_action(self.board, self.start_player_index, action)
                 child_node = Node(
                     board,
                     legal_actions,
@@ -63,14 +63,14 @@ class Node():
 
     @property
     def is_terminal_node(self):
-        self.env.reset_v2(self.start_player_index, init_state=self.board)  # index
+        self.env.mmab_reset(self.start_player_index, init_state=self.board)  # index
         game_won = self.env.game.get_winner("player_1") or self.env.game.get_winner("player_2")
         game_tied = self.env.game.check_tie("player_1") or self.env.game.check_tie("player_2")                                                
         return game_won or game_tied
 
     @property
     def value(self):
-        self.env.reset_v2(self.start_player_index, init_state=self.board)  # index
+        self.env.mmab_reset(self.start_player_index, init_state=self.board)  # index
 
         reward = None
         if self.env.game.check_winner("player_1"):
@@ -82,7 +82,8 @@ class Node():
 
     @property
     def estimated_value(self):
-        # cal value for nodes that aren't terminal
+        '''calcs the value for nodes that aren't terminal'''
+        # NOTE: impliment
         return 0
 
     @property
@@ -93,7 +94,6 @@ class Node():
 def pruning(tree, maximising_player, alpha=float("-inf"), beta=float("+inf"), depth=999, first_level=True):
     if tree.is_terminal_node is True:
         return tree.value
-    # TODO(pu): use a limited search depth
     if depth == 0:
         return tree.estimated_value
 
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     print('-' * 15)
     print(state)
 
-    while not env.get_done_reward()[0]:
+    while not (env.game.check_winner(env._current_player) or env.game.check_tie(env._current_player)):
         if player_index == 0:
             action = player_0.get_best_action(state, player_index=player_index)
             player_index = 1
