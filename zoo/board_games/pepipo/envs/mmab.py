@@ -64,7 +64,7 @@ class Node():
     @property
     def is_terminal_node(self):
         self.env.mmab_reset(self.start_player_index, init_state=self.board)  # index
-        game_won = self.env.game.get_winner("player_1") or self.env.game.get_winner("player_2")
+        game_won = self.env.game.check_winner("player_1") or self.env.game.check_winner("player_2")
         game_tied = self.env.game.check_tie("player_1") or self.env.game.check_tie("player_2")                                                
         return game_won or game_tied
 
@@ -137,7 +137,7 @@ class AlphaBetaPruningBot:
         except:
             simulator_env = copy.deepcopy(self.ENV)
         simulator_env.reset(start_player_index=player_index, init_state=board)
-        root = Node(board, simulator_env.legal_actions, start_player_index=player_index, env=simulator_env)
+        root = Node(board, simulator_env.legal_actions(), start_player_index=player_index, env=simulator_env)
         if player_index == 0:
             val, best_subtree = pruning(root, True, depth=depth, first_level=True)
         else:
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         prob_random_agent=0,
         prob_expert_agent=0,
         battle_mode='self_play_mode',
-        agent_vs_human=False,
+        agent_vs_human=True,
         bot_action_type='alpha_beta_pruning',  # {'v0', 'alpha_beta_pruning'}
     )
     env = PePiPoEnv(EasyDict(cfg))

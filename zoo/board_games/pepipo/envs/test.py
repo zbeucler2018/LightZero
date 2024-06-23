@@ -46,9 +46,10 @@ if True:
     env.render()
 
     while True:
+        action = env.bot_action()
         print(*env.parse_piece_from_action(action))
         print(env.game.pos_per_player)
-        print(p)
+
         timestep = env.step(action)
 
         if timestep.done:

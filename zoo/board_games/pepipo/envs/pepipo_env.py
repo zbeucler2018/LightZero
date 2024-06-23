@@ -83,7 +83,7 @@ class PePiPoEnv(BaseEnv):
 
     def reset(self, start_player_index: int = 0, init_state: Optional[np.ndarray] = None) -> dict:
         if init_state is not None:
-            self.env.game.board = self.convert_board_to_state(init_state)
+            self.game.board = self.convert_board_to_state(init_state.reshape((self.board_size, self.board_size)))
 
         self.players = ["player_1", "player_2"]
         self.start_player_index = start_player_index
@@ -107,20 +107,20 @@ class PePiPoEnv(BaseEnv):
         self.start_player_index = start_player_index
         self._current_player = self.players[self.start_player_index]
         if init_state is not None:
-            self.env.game.board = self.convert_board_to_state(init_state)
+            self.game.board = self.convert_board_to_state(init_state.reshape((self.board_size, self.board_size)))
         else:
             self.env.game.board.empty_board()
 
 
     def mmab_simulate_action(self, board, start_player_index, action) -> tuple:
         self.reset(start_player_index, init_state=board) # reset the env metadata, not the board
-        if action not in self.legal_actions:
+        if action not in self.legal_actions():
             raise ValueError("action {0} on board {1} is not legal".format(action, self.board))
         # execute action
         t_piece, x, y = self.parse_piece_from_action(action)
         self.game.make_move(x, y, t_piece, self._current_player)
         # generate new legal actions and new board
-        new_legal_actions = copy.deepcopy(self.legal_actions)
+        new_legal_actions = copy.deepcopy(self.legal_actions())
         new_board = copy.deepcopy(self.board)
         return new_board, new_legal_actions
 
@@ -253,7 +253,8 @@ class PePiPoEnv(BaseEnv):
         if self.cfg.bot_action_type == "random":
             return self.random_action()
         elif self.cfg.bot_action_type == "alpha_beta_pruning":
-            return self.alpha_beta_pruning_player.get_best_action(self.board, player_index=self.current_player_index)
+            indx = self.players.index(self._current_player)
+            return self.alpha_beta_pruning_player.get_best_action(self.board, player_index=indx)
         else:
             raise NotImplementedError(f"The bot_action_type: {self.cfg.bot_action_type} is not implimented")
 
