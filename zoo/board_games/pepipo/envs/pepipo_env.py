@@ -9,6 +9,7 @@ import numpy as np
 
 from game import Game, Board, t_Piece, Piece
 from zoo.board_games.pepipo.envs.mmab import AlphaBetaPruningBot
+from zoo.board_games.pepipo.envs.mcts import MCTSBot
 
 
 @ENV_REGISTRY.register('pepipo')
@@ -59,8 +60,17 @@ class PePiPoEnv(BaseEnv):
         self.battle_mode_in_simulation_env = 'self_play_mode'
         self.board_size = self.game.board.board_size
 
-        if 'alpha_beta_pruning' in self.cfg.bot_action_type:
+        self.bot_action_type = cfg.bot_action_type
+
+
+        if self.bot_action_type == 'alpha_beta_pruning':
             self.alpha_beta_pruning_player = AlphaBetaPruningBot(self, cfg, 'alpha_beta_pruning_player')
+        if self.bot_action_type == 'mcts':
+            cfg_temp = EasyDict(cfg.copy())
+            cfg_temp.save_replay = False
+            cfg_temp.bot_action_type = None
+            env_mcts = PePiPoEnv(EasyDict(cfg_temp))
+            self.mcts_bot = MCTSBot(env_mcts, 'mcts_player', 50)
 
         # Set some randomness for selecting action.
         self.prob_random_agent = cfg.prob_random_agent
@@ -83,7 +93,10 @@ class PePiPoEnv(BaseEnv):
 
     def reset(self, start_player_index: int = 0, init_state: Optional[np.ndarray] = None) -> dict:
         if init_state is not None:
-            self.game.board = self.convert_board_to_state(init_state.reshape((self.board_size, self.board_size)))
+            init_board = np.array(copy.deepcopy(init_state.reshape((self.board_size, self.board_size))))
+            self.game.board = self.convert_board_to_state(init_board)
+        else:
+            self.game.board.empty_board()
 
         self.players = ["player_1", "player_2"]
         self.start_player_index = start_player_index
@@ -123,6 +136,30 @@ class PePiPoEnv(BaseEnv):
         new_legal_actions = copy.deepcopy(self.legal_actions())
         new_board = copy.deepcopy(self.board)
         return new_board, new_legal_actions
+
+
+    def mcts_simulate_action(self, action: int):
+        """
+        Overview:
+            execute action and get next_simulator_env. used in AlphaZero.
+        Arguments:
+            - action: an integer from the action space.
+        Returns:
+            - next_simulator_env: next simulator env after execute action.
+        """
+        if action not in self.legal_actions():
+            raise ValueError("action {0} on board {1} is not legal".format(action, self.board))
+
+        new_board = copy.deepcopy(self.board)
+
+        t_piece, x, y = self.parse_piece_from_action(action)
+        self.game.make_move(x, y, t_piece, self._current_player)
+
+        start_player_index = 1 if self.start_player_index == 0 else 0
+
+        next_simulator_env = copy.deepcopy(self)
+        next_simulator_env.reset(start_player_index, init_state=new_board)
+        return next_simulator_env
 
 
     def observe(self) -> dict:
@@ -250,13 +287,16 @@ class PePiPoEnv(BaseEnv):
 
 
     def bot_action(self) -> int:
-        if self.cfg.bot_action_type == "random":
+        if self.bot_action_type == "random":
             return self.random_action()
-        elif self.cfg.bot_action_type == "alpha_beta_pruning":
+        elif self.bot_action_type == "alpha_beta_pruning":
             indx = self.players.index(self._current_player)
             return self.alpha_beta_pruning_player.get_best_action(self.board, player_index=indx)
+        elif self.bot_action_type == "mcts":
+            indx = self.players.index(self._current_player)
+            return self.mcts_bot.get_actions(self.board, player_index=indx)
         else:
-            raise NotImplementedError(f"The bot_action_type: {self.cfg.bot_action_type} is not implimented")
+            raise NotImplementedError(f"The bot_action_type: {self.bot_action_type} is not implimented")
 
 
     def random_action(self) -> int:

@@ -18,6 +18,7 @@ class Node():
         self.env = env
         self.board = board
         self.legal_actions = copy.deepcopy(legal_actions)
+        self.old_legal_actions = copy.deepcopy(self.legal_actions)
         self.children = []
         self.parent = parent
         self.prev_action = prev_action
@@ -34,12 +35,15 @@ class Node():
             next_start_player_index = 1
         else:
             next_start_player_index = 0
-        
+
         if self.is_terminal_node is False:
             # Ensure self.legal_actions is valid before the loop
             # self.legal_actions = self.env.get_legal_actions(self.board, self.start_player_index)
+            n = 0
             while len(self.legal_actions) > 0:
+                n += 1
                 action = self.legal_actions.pop(0)
+                t_piece, x, y = self.env.parse_piece_from_action(action)
                 board, legal_actions = self.env.mmab_simulate_action(self.board, self.start_player_index, action)
                 child_node = Node(
                     board,
@@ -65,7 +69,7 @@ class Node():
     def is_terminal_node(self):
         self.env.mmab_reset(self.start_player_index, init_state=self.board)  # index
         game_won = self.env.game.check_winner("player_1") or self.env.game.check_winner("player_2")
-        game_tied = self.env.game.check_tie("player_1") or self.env.game.check_tie("player_2")                                                
+        game_tied = self.env.game.check_tie("player_1") or self.env.game.check_tie("player_2")
         return game_won or game_tied
 
     @property
@@ -77,7 +81,7 @@ class Node():
             reward = 1
         if self.env.game.check_winner("player_2"):
             reward = -1
-        
+
         return reward
 
     @property
@@ -86,16 +90,15 @@ class Node():
         # NOTE: impliment
         return 0
 
-    @property
-    def state(self):
-        return self.board
-
 
 def pruning(tree, maximising_player, alpha=float("-inf"), beta=float("+inf"), depth=999, first_level=True):
     if tree.is_terminal_node is True:
         return tree.value
     if depth == 0:
         return tree.estimated_value
+
+    if depth == 997:
+        p = 0
 
     # print(ctree)
     if tree.expanded is False:

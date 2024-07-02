@@ -116,14 +116,14 @@ class Game:
 
   @property
   def pos_per_player(self) -> dict:
-    tmp = {"player_1": self.max_pos_per_player, 
+    tmp = {"player_1": self.max_pos_per_player,
            "player_2": self.max_pos_per_player,}
     for cell in self.board.board:
        _, r = cell
        if r._typename == t_Piece.PO:
           tmp[r.player_id] -= 1
     return tmp
-       
+
   def play(self) -> None:
     raise NotImplementedError()
 
@@ -220,3 +220,8 @@ class Game:
                 self.logger.debug(f"{player_id} won top-right-bottom-left diagonally")
                 return True
     return False
+
+  def game_is_done(self) -> bool:
+    game_won = self.check_winner("player_1") or self.check_winner("player_2")
+    game_tied = self.check_tie("player_1") or self.check_tie("player_2")
+    return game_won or game_tied

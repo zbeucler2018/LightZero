@@ -93,7 +93,7 @@ class TicTacToeEnv(BaseEnv):
         assert (self.prob_random_agent >= 0 and self.prob_expert_agent == 0) or (
                 self.prob_random_agent == 0 and self.prob_expert_agent >= 0), \
             f'self.prob_random_agent:{self.prob_random_agent}, self.prob_expert_agent:{self.prob_expert_agent}'
-        
+
         self._env = self
 
         self.agent_vs_human = cfg.agent_vs_human
@@ -376,9 +376,9 @@ class TicTacToeEnv(BaseEnv):
                 the 1 dim indicates which positions are occupied by self.next_player,
                 the 2 dim indicates which player is the to_play player, 1 means player 1, 2 means player 2
         """
-        board_curr_player = np.where(self.board == self.current_player, 1, 0)
-        board_opponent_player = np.where(self.board == self.next_player, 1, 0)
-        board_to_play = np.full((self.board_size, self.board_size), self.current_player)
+        board_curr_player = np.where(self.board == self.current_player, 1, 0) # 1 in position where current_player resides, 0 if not
+        board_opponent_player = np.where(self.board == self.next_player, 1, 0) # 1 in position where next_player resides, 0 if not
+        board_to_play = np.full((self.board_size, self.board_size), self.current_player) # matrix full of the current player's index
         raw_obs = np.array([board_curr_player, board_opponent_player, board_to_play], dtype=np.float32)
         if self.scale:
             scale_obs = copy.deepcopy(raw_obs / 2)
