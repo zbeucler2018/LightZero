@@ -122,7 +122,7 @@ class PePiPoEnv(BaseEnv):
         if init_state is not None:
             self.game.board = self.convert_board_to_state(init_state.reshape((self.board_size, self.board_size)))
         else:
-            self.env.game.board.empty_board()
+            self.game.board.empty_board()
 
 
     def mmab_simulate_action(self, board, start_player_index, action) -> tuple:

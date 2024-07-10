@@ -9,7 +9,8 @@ from gymnasium import spaces
 import numpy as np
 
 from game import Game, Board, t_Piece, Piece
-from zoo.board_games.pepipo.envs.mmab import AlphaBetaPruningBot
+from zoo.board_games.alphabeta_pruning_bot import AlphaBetaPruningBot
+from zoo.board_games.mcts_bot import MCTSBot
 
 
 """
@@ -22,7 +23,7 @@ from zoo.board_games.pepipo.envs.mmab import AlphaBetaPruningBot
 |              | shape | type     | low | high |
 | ------------ | ----- | -------- | --- | ---- |
 | board        | (8,8) | int8     |  0  |  8   | NOTE: Should be a 'global' view of the state/board
-| obs space    | (8,8) | box      |  0  |  8   | NOTE: Should be a current_player specific view of the board
+| obs space    | (8,8) | box      |  0  |  8   | NOTE: Should be a _current_player specific view of the board
 | action space | (192) | discrete |  0  |  192 |
 | action mask  | (192) | int8     |  0  |  1   |
 | reward space | (1)   | box      | -1  |  1   |
@@ -57,6 +58,7 @@ class PePiPoEnv(BaseEnv):
         # alphazero_mcts_ctree (bool): If True, the Monte Carlo Tree Search from AlphaZero is used.
         alphazero_mcts_ctree=False,
         # render_mode (str): 'human', 'ascii', or 'mp4'
+        render_mode='ascii'
     )
 
     @classmethod
@@ -71,8 +73,8 @@ class PePiPoEnv(BaseEnv):
 
         self.game = Game()
 
-        self.channel_last = cfg.channel_last
-        self.scale = cfg.scale
+        # self.channel_last = cfg.channel_last
+        # self.scale = cfg.scale
 
         self.battle_mode = cfg.battle_mode
         # The mode of interaction between the agent and the environment.
@@ -99,9 +101,16 @@ class PePiPoEnv(BaseEnv):
 
         self.agent_vs_human = cfg.agent_vs_human
         self.bot_action_type = cfg.bot_action_type
+        self.alphazero_mcts_ctree = cfg.alphazero_mcts_ctree
 
-        if self.bot_action_type == 'alpha_beta_pruning':
-            self.alpha_beta_pruning_player = AlphaBetaPruningBot(self, cfg, 'alpha_beta_pruning_player')
+        if self.bot_action_type == 'minimax':
+            self.alpha_beta_pruning_player = AlphaBetaPruningBot(self, cfg, 'minimax_player')
+        if self.bot_action_type == 'mcts':
+            cfg_temp = EasyDict(cfg.copy())
+            cfg_temp.save_replay = False
+            cfg_temp.bot_action_type = None
+            env_mcts = PePiPoEnv(EasyDict(cfg_temp))
+            self.mcts_bot = MCTSBot(env_mcts, 'mcts_player', 50)
 
 
     def step(self, action: int) -> BaseEnvTimestep:
@@ -152,9 +161,9 @@ class PePiPoEnv(BaseEnv):
     def reset(self, start_player_index=0, init_state=None, katago_policy_init=False, katago_game_state=None):
         '''Resets the enviroment'''
         # define spaces
-        self._observation_space = spaces.Box(low=0, high=1, shape=(self.board_size, self.board_size), dtype=np.int8)
+        self._observation_space = spaces.Box(low=0, high=1, shape=(self.board_size, self.board_size, 2), dtype=np.int8)
         self._action_space = spaces.Discrete(self.total_num_actions)
-        self._reward_shape = spaces.Box(low=-1, high=1, shape=self.total_num_actions, dtype=np.int8)
+        self._reward_shape = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.int8)
 
         # config players
         self.start_player_index = start_player_index
@@ -193,6 +202,28 @@ class PePiPoEnv(BaseEnv):
         return obs
 
 
+    def reset_v2(self, start_player_index=0, init_state=None) -> None:
+        '''Used by AlphaBetaPruningBot only'''
+        self.start_player_index = start_player_index
+        self._current_player = self.players[self.start_player_index]
+        if init_state is not None:
+            self.game.board = self.convert_numpy_array_to_board(init_state)
+        else:
+            self.game.board.empty_board()
+
+
+    def simulate_action_v2(self, board, start_player_index, action):
+        '''Used by AlphaBetaPruningBot only'''
+        self.reset(start_player_index, init_state=board) # reset the env metadata, not the board
+        if action not in self.legal_actions:
+            raise ValueError("action {0} on board {1} is not legal".format(action, self.board))
+        tpiece, x, y = self.parse_piece_from_action(action)
+        self.game.make_move(x, y, tpiece, self._current_player)
+        new_legal_actions = copy.deepcopy(self.legal_actions)
+        new_board = copy.deepcopy(self.board)
+        return new_board, new_legal_actions
+
+
     def modify_state(self, action: int) -> BaseEnvTimestep:
         # 1. validate move
         tpiece, x, y = self.parse_piece_from_action(action)
@@ -227,11 +258,57 @@ class PePiPoEnv(BaseEnv):
         return BaseEnvTimestep(obs, reward, done, info)
 
 
-    def _get_obs(self) -> np.ndarray:
-        '''Generates the observation'''
+    def _get_obs(self, player=None) -> np.ndarray:
+        '''Generates the observation for the given or current player'''
         # NOTE: In TicTacToeEnv, the obs is player specific and the board is global
-        # TODO: Figure out a better observation scheme
-        return self.convert_board_to_numpy_array()
+        # This whole thing is gross
+        # Dimentions
+        # 1. The board only concerning the current player (0=empty,1=pe,2=pi,3=po,4=pi+po)
+        # 2. The board only concerning the next player (0=empty,-1=pe,-2=pi,-3=po)
+        # 3. the current player's index
+        if player is None:
+            player = self._current_player
+        board = self.convert_board_to_numpy_array()
+        d1_tmp = np.zeros(shape=(self.board_size, self.board_size), dtype=np.int8)
+        d2_tmp = np.zeros(shape=(self.board_size, self.board_size), dtype=np.int8)
+        for x in range(self.board_size):
+            for y in range(self.board_size):
+                match board[x, y]:
+                    case 0: # empty
+                        d1_tmp[x, y] = 0
+                    case 1: # p1 pe
+                        if self._current_player == "player_1":
+                            d1_tmp[x, y] = 1
+                    case 2: # p2 pe
+                        if self._current_player == "player_2":
+                            d2_tmp[x, y] = -1
+                    case 3: # p1 po
+                        if self._current_player == "player_1":
+                            d1_tmp[x, y] = 3
+                    case 4: # p2 po
+                        if self._current_player == "player_2":
+                            d2_tmp[x, y] = -3
+                    case 5: # p1 pi in p1 pe
+                        if self._current_player == "player_1":
+                            d1_tmp[x, y] = 4
+                    case 6: # p2 pi in p2 pe
+                        if self._current_player == "player_2":
+                            d2_tmp[x, y] = -4
+                    case 7: # p1 pi in p2 pe (both players are here)
+                        if self._current_player == "player_1":
+                            d1_tmp[x, y] = 2
+                            d2_tmp[x, y] = -1
+                        elif self._current_player == "player_2":
+                            d1_tmp[x, y] = -1
+                            d2_tmp[x, y] = 2
+                    case 8: # p2 pi in p1 pe (both players are here)
+                        if self._current_player == "player_1":
+                            d1_tmp = 1
+                            d2_tmp = -2
+                        elif self._current_player == "player_2":
+                            d1_tmp = 2
+                            d2_tmp = -1
+        return np.array([d1_tmp, d2_tmp])
 
 
     def _get_action_mask(self, player=None) -> np.ndarray:
@@ -262,26 +339,27 @@ class PePiPoEnv(BaseEnv):
         if new_board is None:
             new_board = self.game.board
         tmp_board = np.zeros(shape=(self.board_size, self.board_size), dtype=np.int8)
-        for indx, spot in enumerate(new_board):
-            left, right = spot
-            if left._typename == t_Piece.EMPTY and right._typename == t_Piece.EMPTY:
-                tmp_board[indx] = 0
-            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_1"):
-                tmp_board[indx] = 1
-            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_2"):
-                tmp_board[indx] = 2
-            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_1"):
-                tmp_board[indx] = 3
-            if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_2"):
-                tmp_board[indx] = 4
-            if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
-                tmp_board[indx] = 5
-            if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
-                tmp_board[indx] = 6
-            if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
-                tmp_board[indx] = 7
-            if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
-                tmp_board[indx] = 8
+        for y in range(self.board_size):
+            for x in range(self.board_size):
+                left, right = new_board[x, y]
+                if left._typename == t_Piece.EMPTY and right._typename == t_Piece.EMPTY:
+                    tmp_board[x, y] = 0
+                if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                    tmp_board[x, y] = 1
+                if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                    tmp_board[x, y] = 2
+                if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_1"):
+                    tmp_board[x, y] = 3
+                if left._typename == t_Piece.EMPTY and (right._typename == t_Piece.PO and right.player_id == "player_2"):
+                    tmp_board[x, y] = 4
+                if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                    tmp_board[x, y] = 5
+                if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                    tmp_board[x, y] = 6
+                if (left._typename == t_Piece.PI and left.player_id == "player_1") and (right._typename == t_Piece.PE and right.player_id == "player_2"):
+                    tmp_board[x, y] = 7
+                if (left._typename == t_Piece.PI and left.player_id == "player_2") and (right._typename == t_Piece.PE and right.player_id == "player_1"):
+                    tmp_board[x, y] = 8
         return tmp_board
 
 
@@ -360,16 +438,27 @@ class PePiPoEnv(BaseEnv):
 
 
     def get_done_reward(self):
-        ...
+        # only rewards player1 if it won
+        done, winner = self.get_done_winner()
+        if winner == "player_1": # p1 w
+            reward = 1
+        elif winner == "player_2": # p2 w
+            reward = -1
+        elif winner == -1 and done: # tie
+            reward = 0
+        elif winner == -1 and not done:
+            # episode is not done
+            reward = None
+        return done, reward
 
 
     def bot_action(self) -> int:
         if self.bot_action_type == 'random':
             return self.random_action()
         elif self.bot_action_type == 'minimax':
-            raise NotImplementedError
+            return self.alpha_beta_pruning_player.get_best_action(self.board, self._current_player_index)
         elif self.bot_action_type == 'mcts':
-            raise NotImplementedError
+            raise self.mcts_bot.get_actions(self.board, self._current_player_index)
         else:
             raise NotImplementedError
 
@@ -398,6 +487,11 @@ class PePiPoEnv(BaseEnv):
     def random_action(self) -> int:
         '''Returns a valid random action for the currrent player'''
         return np.random.choice(self.legal_actions)
+
+
+    def render(self, mode="ascii") -> None:
+        if self.render_mode == 'ascii':
+            self.game.print_board()
 
 
     @property
